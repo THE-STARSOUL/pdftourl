@@ -1,6 +1,5 @@
 import os
-import sqlalchemy
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -15,13 +14,12 @@ class QuizSession(Base):
     __tablename__ = 'quiz_sessions'
     
     id = Column(Integer, primary_key=True)
-    pdf_filename = Column(String(255), nullable=False)
-    difficulty = Column(String(50), nullable=False)
-    total_questions = Column(Integer, nullable=False)
-    correct_answers = Column(Integer, nullable=False)
-    score_percentage = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime)
+    pdf_filename = Column(String)
+    difficulty = Column(String)
+    score_percentage = Column(Float)
+    correct_answers = Column(Integer)
+    total_questions = Column(Integer)
+    completed_at = Column(DateTime, default=datetime.utcnow)
 
 class Question(Base):
     """Store individual questions and answers"""
@@ -29,225 +27,113 @@ class Question(Base):
     
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, nullable=False)
-    question_text = Column(Text, nullable=False)
-    option_a = Column(Text, nullable=False)
-    option_b = Column(Text, nullable=False)
-    option_c = Column(Text, nullable=False)
-    option_d = Column(Text, nullable=False)
-    correct_answer = Column(Text, nullable=False)
-    user_answer = Column(Text)
+    question_text = Column(String, nullable=False)
+    option_a = Column(String, nullable=False)
+    option_b = Column(String, nullable=False)
+    option_c = Column(String, nullable=False)
+    option_d = Column(String, nullable=False)
+    correct_answer = Column(String, nullable=False)
+    user_answer = Column(String)
     is_correct = Column(Boolean)
-    explanation = Column(Text)
+    explanation = Column(String)
 
 class UsedQuestion(Base):
     """Track questions that have been asked to avoid repetition"""
     __tablename__ = 'used_questions'
     
     id = Column(Integer, primary_key=True)
-    pdf_filename = Column(String(255), nullable=False)
-    question_hash = Column(String(255), nullable=False)  # Hash of question text
-    created_at = Column(DateTime, default=datetime.utcnow)
+    pdf_filename = Column(String)
+    question_text = Column(String)
+    used_at = Column(DateTime, default=datetime.utcnow)
 
 class DatabaseManager:
     """Manage database operations for the quiz application"""
     
     def __init__(self):
-        self.engine = None
-        self.Session = None
-        self.setup_database()
-    
-    def setup_database(self):
-        """Initialize database connection and create tables"""
-        try:
-            if not DATABASE_URL:
-                st.error("Database URL not found. Please check your database configuration.")
-                return
-            
-            self.engine = create_engine(DATABASE_URL)
-            Base.metadata.create_all(self.engine)
-            self.Session = sessionmaker(bind=self.engine)
-            
-        except Exception as e:
-            st.error(f"Database setup failed: {str(e)}")
+        # Use SQLite as default database
+        self.engine = create_engine('sqlite:///quiz_database.db')
+        Base.metadata.create_all(self.engine)
+        Session = sessionmaker(bind=self.engine)
+        self.session = Session()
     
     def save_quiz_session(self, pdf_filename, difficulty, questions, user_answers):
         """Save a completed quiz session to the database"""
-        if not self.Session:
-            return None
-            
-        session = None
         try:
-            session = self.Session()
+            correct_answers = sum(1 for q, a in zip(questions, user_answers) if q['correct_answer'] == a)
+            total_questions = len(questions)
+            score_percentage = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
             
-            # Calculate score
-            correct_count = sum(1 for i, q in enumerate(questions) 
-                              if i < len(user_answers) and user_answers[i] == q['correct_answer'])
-            score_percentage = (correct_count / len(questions)) * 100 if questions else 0
-            
-            # Create quiz session record
             quiz_session = QuizSession(
                 pdf_filename=pdf_filename,
                 difficulty=difficulty,
-                total_questions=len(questions),
-                correct_answers=correct_count,
                 score_percentage=score_percentage,
-                completed_at=datetime.utcnow()
+                correct_answers=correct_answers,
+                total_questions=total_questions
             )
             
-            session.add(quiz_session)
-            session.flush()  # Get the session ID
-            
-            # Save individual questions
-            for i, question_data in enumerate(questions):
-                user_answer = user_answers[i] if i < len(user_answers) else None
-                is_correct = user_answer == question_data['correct_answer'] if user_answer else False
-                
-                # Extract options from the question
-                options = question_data['options']
-                option_a = options[0] if len(options) > 0 else ""
-                option_b = options[1] if len(options) > 1 else ""
-                option_c = options[2] if len(options) > 2 else ""
-                option_d = options[3] if len(options) > 3 else ""
-                
-                question = Question(
-                    session_id=quiz_session.id,
-                    question_text=question_data['question'],
-                    option_a=option_a,
-                    option_b=option_b,
-                    option_c=option_c,
-                    option_d=option_d,
-                    correct_answer=question_data['correct_answer'],
-                    user_answer=user_answer,
-                    is_correct=is_correct,
-                    explanation=question_data.get('explanation', '')
-                )
-                
-                session.add(question)
-            
-            session.commit()
-            session_id = quiz_session.id
-            session.close()
-            
-            return session_id
-            
+            self.session.add(quiz_session)
+            self.session.commit()
+            return quiz_session.id
         except Exception as e:
-            print(f"Database error: {str(e)}")  # Use print instead of st.error for debugging
-            if session:
-                session.rollback()
-                session.close()
+            self.session.rollback()
+            print(f"Error saving quiz session: {str(e)}")
             return None
     
-    def get_quiz_history(self, limit=10):
+    def get_quiz_history(self, limit=20):
         """Get recent quiz history"""
-        if not self.Session:
-            return []
-            
-        session = None
         try:
-            session = self.Session()
-            
-            quiz_sessions = session.query(QuizSession)\
-                                 .order_by(QuizSession.completed_at.desc())\
-                                 .limit(limit)\
-                                 .all()
-            
-            history = []
-            for quiz in quiz_sessions:
-                history.append({
-                    'id': quiz.id,
-                    'pdf_filename': quiz.pdf_filename,
-                    'difficulty': quiz.difficulty,
-                    'total_questions': quiz.total_questions,
-                    'correct_answers': quiz.correct_answers,
-                    'score_percentage': quiz.score_percentage,
-                    'completed_at': quiz.completed_at
-                })
-            
-            session.close()
-            return history
-            
+            return self.session.query(QuizSession).order_by(QuizSession.completed_at.desc()).limit(limit).all()
         except Exception as e:
-            print(f"Failed to retrieve quiz history: {str(e)}")
-            if session:
-                session.close()
+            print(f"Error getting quiz history: {str(e)}")
             return []
     
     def get_performance_stats(self):
         """Get overall performance statistics"""
-        if not self.Session:
-            return {
-                'total_quizzes': 0,
-                'average_score': 0,
-                'total_questions_answered': 0,
-                'best_score': 0,
-                'favorite_difficulty': 'N/A'
-            }
-            
-        session = None
         try:
-            session = self.Session()
-            
-            # Get total quizzes taken
-            total_quizzes = session.query(QuizSession).count()
-            
-            if total_quizzes == 0:
-                session.close()
+            sessions = self.session.query(QuizSession).all()
+            if not sessions:
                 return {
                     'total_quizzes': 0,
                     'average_score': 0,
-                    'total_questions_answered': 0,
                     'best_score': 0,
+                    'total_questions_answered': 0,
                     'favorite_difficulty': 'N/A'
                 }
             
-            # Calculate average score
-            avg_score = session.query(sqlalchemy.func.avg(QuizSession.score_percentage)).scalar()
-            
-            # Get best score
-            best_score = session.query(sqlalchemy.func.max(QuizSession.score_percentage)).scalar()
-            
-            # Get total questions answered
-            total_questions = session.query(sqlalchemy.func.sum(QuizSession.total_questions)).scalar()
+            total_quizzes = len(sessions)
+            average_score = sum(s.score_percentage for s in sessions) / total_quizzes
+            best_score = max(s.score_percentage for s in sessions)
+            total_questions = sum(s.total_questions for s in sessions)
             
             # Get most common difficulty
-            difficulty_count = session.query(QuizSession.difficulty, 
-                                           sqlalchemy.func.count(QuizSession.difficulty))\
-                                    .group_by(QuizSession.difficulty)\
-                                    .order_by(sqlalchemy.func.count(QuizSession.difficulty).desc())\
-                                    .first()
-            
-            favorite_difficulty = difficulty_count[0] if difficulty_count else 'N/A'
-            
-            session.close()
+            difficulties = [s.difficulty for s in sessions]
+            favorite_difficulty = max(set(difficulties), key=difficulties.count)
             
             return {
                 'total_quizzes': total_quizzes,
-                'average_score': round(avg_score, 1) if avg_score else 0,
-                'total_questions_answered': total_questions or 0,
-                'best_score': round(best_score, 1) if best_score else 0,
+                'average_score': average_score,
+                'best_score': best_score,
+                'total_questions_answered': total_questions,
                 'favorite_difficulty': favorite_difficulty
             }
-            
         except Exception as e:
-            print(f"Failed to retrieve performance stats: {str(e)}")
-            if session:
-                session.close()
+            print(f"Error getting performance stats: {str(e)}")
             return {
                 'total_quizzes': 0,
                 'average_score': 0,
-                'total_questions_answered': 0,
                 'best_score': 0,
+                'total_questions_answered': 0,
                 'favorite_difficulty': 'N/A'
             }
     
     def get_quiz_details(self, session_id):
         """Get detailed information about a specific quiz session"""
-        if not self.Session:
+        if not self.session:
             return None
             
         session = None
         try:
-            session = self.Session()
+            session = self.session
             
             # Get quiz session
             quiz_session = session.query(QuizSession).filter_by(id=session_id).first()
@@ -293,53 +179,32 @@ class DatabaseManager:
     
     def mark_questions_as_used(self, pdf_filename, questions):
         """Mark questions as used to avoid repetition"""
-        if not self.Session:
-            return
-            
-        session = None
         try:
-            session = self.Session()
-            import hashlib
-            
             for question in questions:
-                question_hash = hashlib.md5(question['question'].encode()).hexdigest()
-                
-                # Check if already exists
-                existing = session.query(UsedQuestion).filter_by(
-                    pdf_filename=pdf_filename, 
-                    question_hash=question_hash
-                ).first()
-                
-                if not existing:
-                    used_question = UsedQuestion(
-                        pdf_filename=pdf_filename,
-                        question_hash=question_hash
-                    )
-                    session.add(used_question)
-            
-            session.commit()
-            session.close()
-            
+                used_question = UsedQuestion(
+                    pdf_filename=pdf_filename,
+                    question_text=question['question']
+                )
+                self.session.add(used_question)
+            self.session.commit()
         except Exception as e:
-            print(f"Failed to mark questions as used: {str(e)}")
-            if session:
-                session.rollback()
-                session.close()
+            self.session.rollback()
+            print(f"Error marking questions as used: {str(e)}")
     
     def get_used_question_hashes(self, pdf_filename):
         """Get list of question hashes that have been used for this PDF"""
-        if not self.Session:
+        if not self.session:
             return []
             
         session = None
         try:
-            session = self.Session()
+            session = self.session
             
-            used_questions = session.query(UsedQuestion.question_hash)\
+            used_questions = session.query(UsedQuestion.question_text)\
                                   .filter_by(pdf_filename=pdf_filename)\
                                   .all()
             
-            hashes = [q.question_hash for q in used_questions]
+            hashes = [q.question_text for q in used_questions]
             session.close()
             return hashes
             

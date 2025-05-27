@@ -5,13 +5,14 @@ from mcq_generator import generate_mcqs
 from quiz_manager import QuizManager
 from database import db_manager
 
+# Set page config must be the first Streamlit command
+st.set_page_config(
+    page_title="PDF to MCQ Generator",
+    page_icon="📚",
+    layout="wide"
+)
+
 def main():
-    st.set_page_config(
-        page_title="PDF to MCQ Generator",
-        page_icon="📚",
-        layout="wide"
-    )
-    
     st.title("📚 PDF to MCQ Generator")
     st.markdown("Upload your study notes PDF and generate customizable multiple choice questions!")
     
@@ -292,17 +293,17 @@ def show_quiz_history():
         return
     
     for quiz in history:
-        with st.expander(f"📄 {quiz['pdf_filename']} - {quiz['score_percentage']:.1f}% ({quiz['completed_at'].strftime('%Y-%m-%d %H:%M')})"):
+        with st.expander(f"📄 {quiz.pdf_filename} - {quiz.score_percentage:.1f}% ({quiz.completed_at.strftime('%Y-%m-%d %H:%M')})"):
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Score", f"{quiz['correct_answers']}/{quiz['total_questions']}")
+                st.metric("Score", f"{quiz.correct_answers}/{quiz.total_questions}")
             with col2:
-                st.metric("Percentage", f"{quiz['score_percentage']:.1f}%")
+                st.metric("Percentage", f"{quiz.score_percentage:.1f}%")
             with col3:
-                st.metric("Difficulty", quiz['difficulty'])
+                st.metric("Difficulty", quiz.difficulty)
             with col4:
-                st.metric("Date", quiz['completed_at'].strftime('%m/%d/%Y'))
+                st.metric("Date", quiz.completed_at.strftime('%m/%d/%Y'))
 
 def show_performance_stats():
     """Display overall performance statistics"""
