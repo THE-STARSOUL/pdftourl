@@ -116,7 +116,13 @@ def setup_phase():
                 
                 with st.spinner(f"Generating {num_questions} {difficulty.lower()} level questions from your PDF..."):
                     try:
-                        questions = generate_mcqs(st.session_state.pdf_text, difficulty, num_questions)
+                        questions = generate_mcqs(
+                            st.session_state.pdf_text, 
+                            difficulty, 
+                            num_questions, 
+                            pdf_filename=st.session_state.pdf_filename,
+                            avoid_used_questions=True
+                        )
                         
                         if not questions:
                             st.error("❌ Failed to generate questions. Please try again or upload a different PDF.")

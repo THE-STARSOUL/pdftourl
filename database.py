@@ -34,10 +34,19 @@ class Question(Base):
     option_b = Column(Text, nullable=False)
     option_c = Column(Text, nullable=False)
     option_d = Column(Text, nullable=False)
-    correct_answer = Column(String(10), nullable=False)
-    user_answer = Column(String(10))
+    correct_answer = Column(Text, nullable=False)
+    user_answer = Column(Text)
     is_correct = Column(Boolean)
     explanation = Column(Text)
+
+class UsedQuestion(Base):
+    """Track questions that have been asked to avoid repetition"""
+    __tablename__ = 'used_questions'
+    
+    id = Column(Integer, primary_key=True)
+    pdf_filename = Column(String(255), nullable=False)
+    question_hash = Column(String(255), nullable=False)  # Hash of question text
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class DatabaseManager:
     """Manage database operations for the quiz application"""
@@ -281,6 +290,64 @@ class DatabaseManager:
             if session:
                 session.close()
             return None
+    
+    def mark_questions_as_used(self, pdf_filename, questions):
+        """Mark questions as used to avoid repetition"""
+        if not self.Session:
+            return
+            
+        session = None
+        try:
+            session = self.Session()
+            import hashlib
+            
+            for question in questions:
+                question_hash = hashlib.md5(question['question'].encode()).hexdigest()
+                
+                # Check if already exists
+                existing = session.query(UsedQuestion).filter_by(
+                    pdf_filename=pdf_filename, 
+                    question_hash=question_hash
+                ).first()
+                
+                if not existing:
+                    used_question = UsedQuestion(
+                        pdf_filename=pdf_filename,
+                        question_hash=question_hash
+                    )
+                    session.add(used_question)
+            
+            session.commit()
+            session.close()
+            
+        except Exception as e:
+            print(f"Failed to mark questions as used: {str(e)}")
+            if session:
+                session.rollback()
+                session.close()
+    
+    def get_used_question_hashes(self, pdf_filename):
+        """Get list of question hashes that have been used for this PDF"""
+        if not self.Session:
+            return []
+            
+        session = None
+        try:
+            session = self.Session()
+            
+            used_questions = session.query(UsedQuestion.question_hash)\
+                                  .filter_by(pdf_filename=pdf_filename)\
+                                  .all()
+            
+            hashes = [q.question_hash for q in used_questions]
+            session.close()
+            return hashes
+            
+        except Exception as e:
+            print(f"Failed to get used questions: {str(e)}")
+            if session:
+                session.close()
+            return []
 
 # Global database manager instance
 db_manager = DatabaseManager()

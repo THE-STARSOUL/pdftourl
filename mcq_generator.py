@@ -6,7 +6,7 @@ import streamlit as st
 # Configure Google Gemini API
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
-def generate_mcqs(pdf_text, difficulty, num_questions):
+def generate_mcqs(pdf_text, difficulty, num_questions, pdf_filename=None, avoid_used_questions=True):
     """
     Generate multiple choice questions from PDF text using Google Gemini
     
@@ -14,6 +14,8 @@ def generate_mcqs(pdf_text, difficulty, num_questions):
         pdf_text (str): Extracted text from PDF
         difficulty (str): Difficulty level - "Easy", "Medium", or "Hard"
         num_questions (int): Number of questions to generate
+        pdf_filename (str): Name of PDF file to track used questions
+        avoid_used_questions (bool): Whether to avoid previously asked questions
         
     Returns:
         list: List of MCQ dictionaries with question, options, and correct answer
@@ -58,6 +60,20 @@ def generate_mcqs(pdf_text, difficulty, num_questions):
         
         # Validate and format the questions
         questions = validate_and_format_questions(result.get('questions', []))
+        
+        # Filter out used questions if requested
+        if avoid_used_questions and pdf_filename:
+            from database import db_manager
+            used_hashes = db_manager.get_used_question_hashes(pdf_filename)
+            import hashlib
+            
+            filtered_questions = []
+            for question in questions:
+                question_hash = hashlib.md5(question['question'].encode()).hexdigest()
+                if question_hash not in used_hashes:
+                    filtered_questions.append(question)
+            
+            questions = filtered_questions
         
         if len(questions) < num_questions:
             st.warning(f"Only {len(questions)} out of {num_questions} questions could be generated from the PDF content.")
@@ -113,6 +129,17 @@ DIFFICULTY: HARD
 
 def create_user_prompt(pdf_text, num_questions, difficulty):
     """Create user prompt with PDF content and requirements"""
+    
+    # Shuffle text content to get questions from different parts
+    import random
+    
+    # Split text into chunks and randomly select from different parts
+    sentences = pdf_text.split('.')
+    if len(sentences) > 20:
+        # Take random sections from the text to ensure variety
+        random.shuffle(sentences)
+        selected_sentences = sentences[:min(len(sentences), 50)]
+        pdf_text = '. '.join(selected_sentences)
     
     # Truncate text if too long (to avoid token limits)
     max_text_length = 8000  # Adjust based on model limits
