@@ -1,15 +1,14 @@
 import json
 import os
-import anthropic
-from anthropic import Anthropic
+import google.generativeai as genai
 import streamlit as st
 
-# the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+# Configure Google Gemini API
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 def generate_mcqs(pdf_text, difficulty, num_questions):
     """
-    Generate multiple choice questions from PDF text using Anthropic Claude
+    Generate multiple choice questions from PDF text using Google Gemini
     
     Args:
         pdf_text (str): Extracted text from PDF
@@ -19,31 +18,33 @@ def generate_mcqs(pdf_text, difficulty, num_questions):
     Returns:
         list: List of MCQ dictionaries with question, options, and correct answer
     """
-    if not ANTHROPIC_API_KEY:
-        raise Exception("Anthropic API key not found. Please set the ANTHROPIC_API_KEY environment variable.")
+    if not GOOGLE_API_KEY:
+        raise Exception("Google API key not found. Please set the GOOGLE_API_KEY environment variable.")
     
     try:
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        # Configure Gemini
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Create the prompt based on difficulty level
+        # Create the combined prompt
         system_prompt = create_system_prompt(difficulty)
         user_prompt = create_user_prompt(pdf_text, num_questions, difficulty)
         
-        # Call Anthropic API
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4000,
-            temperature=0.7,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt}
-            ]
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        
+        # Call Gemini API
+        response = model.generate_content(
+            full_prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=4000,
+            )
         )
         
         # Parse the response
-        response_text = response.content[0].text if hasattr(response.content[0], 'text') else str(response.content[0])
+        response_text = response.text
         
-        # Extract JSON from response (Claude might wrap it in markdown)
+        # Extract JSON from response (Gemini might wrap it in markdown)
         if "```json" in response_text:
             json_start = response_text.find("```json") + 7
             json_end = response_text.find("```", json_start)
@@ -206,25 +207,22 @@ def validate_and_format_questions(questions):
     
     return validated_questions
 
-def test_anthropic_connection():
-    """Test if Anthropic API is accessible"""
+def test_gemini_connection():
+    """Test if Google Gemini API is accessible"""
     try:
-        if not ANTHROPIC_API_KEY:
-            return False, "Anthropic API key not found"
+        if not GOOGLE_API_KEY:
+            return False, "Google API key not found"
         
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Simple test call
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=10,
-            messages=[{"role": "user", "content": "Hello"}]
-        )
+        response = model.generate_content("Hello")
         
-        return True, "Anthropic API connection successful"
+        return True, "Google Gemini API connection successful"
         
     except Exception as e:
-        return False, f"Anthropic API connection failed: {str(e)}"
+        return False, f"Google Gemini API connection failed: {str(e)}"
 
 def estimate_question_generation_time(text_length, num_questions):
     """
