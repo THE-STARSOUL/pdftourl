@@ -63,6 +63,10 @@ class DatabaseManager:
     
     def save_quiz_session(self, pdf_filename, difficulty, questions, user_answers):
         """Save a completed quiz session to the database"""
+        if not self.Session:
+            return None
+            
+        session = None
         try:
             session = self.Session()
             
@@ -112,12 +116,13 @@ class DatabaseManager:
                 session.add(question)
             
             session.commit()
+            session_id = quiz_session.id
             session.close()
             
-            return quiz_session.id
+            return session_id
             
         except Exception as e:
-            st.error(f"Failed to save quiz session: {str(e)}")
+            print(f"Database error: {str(e)}")  # Use print instead of st.error for debugging
             if session:
                 session.rollback()
                 session.close()
@@ -125,6 +130,10 @@ class DatabaseManager:
     
     def get_quiz_history(self, limit=10):
         """Get recent quiz history"""
+        if not self.Session:
+            return []
+            
+        session = None
         try:
             session = self.Session()
             
@@ -149,11 +158,23 @@ class DatabaseManager:
             return history
             
         except Exception as e:
-            st.error(f"Failed to retrieve quiz history: {str(e)}")
+            print(f"Failed to retrieve quiz history: {str(e)}")
+            if session:
+                session.close()
             return []
     
     def get_performance_stats(self):
         """Get overall performance statistics"""
+        if not self.Session:
+            return {
+                'total_quizzes': 0,
+                'average_score': 0,
+                'total_questions_answered': 0,
+                'best_score': 0,
+                'favorite_difficulty': 'N/A'
+            }
+            
+        session = None
         try:
             session = self.Session()
             
@@ -199,11 +220,23 @@ class DatabaseManager:
             }
             
         except Exception as e:
-            st.error(f"Failed to retrieve performance stats: {str(e)}")
-            return {}
+            print(f"Failed to retrieve performance stats: {str(e)}")
+            if session:
+                session.close()
+            return {
+                'total_quizzes': 0,
+                'average_score': 0,
+                'total_questions_answered': 0,
+                'best_score': 0,
+                'favorite_difficulty': 'N/A'
+            }
     
     def get_quiz_details(self, session_id):
         """Get detailed information about a specific quiz session"""
+        if not self.Session:
+            return None
+            
+        session = None
         try:
             session = self.Session()
             
@@ -244,7 +277,9 @@ class DatabaseManager:
             return quiz_details
             
         except Exception as e:
-            st.error(f"Failed to retrieve quiz details: {str(e)}")
+            print(f"Failed to retrieve quiz details: {str(e)}")
+            if session:
+                session.close()
             return None
 
 # Global database manager instance
