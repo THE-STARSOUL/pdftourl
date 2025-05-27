@@ -3,6 +3,7 @@ import os
 from pdf_processor import extract_text_from_pdf
 from mcq_generator import generate_mcqs
 from quiz_manager import QuizManager
+from database import db_manager
 
 def main():
     st.set_page_config(
@@ -23,12 +24,32 @@ def main():
         st.session_state.pdf_processed = False
     if 'pdf_text' not in st.session_state:
         st.session_state.pdf_text = ""
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "quiz"
+    if 'pdf_filename' not in st.session_state:
+        st.session_state.pdf_filename = ""
+    
+    # Sidebar navigation
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Go to:", ["Quiz Generator", "Quiz History", "Performance Stats"])
+    
+    if page == "Quiz Generator":
+        st.session_state.current_page = "quiz"
+    elif page == "Quiz History":
+        st.session_state.current_page = "history"
+    elif page == "Performance Stats":
+        st.session_state.current_page = "stats"
     
     # Main application flow
-    if not st.session_state.quiz_started:
-        setup_phase()
-    else:
-        quiz_phase()
+    if st.session_state.current_page == "quiz":
+        if not st.session_state.quiz_started:
+            setup_phase()
+        else:
+            quiz_phase()
+    elif st.session_state.current_page == "history":
+        show_quiz_history()
+    elif st.session_state.current_page == "stats":
+        show_performance_stats()
 
 def setup_phase():
     """Handle PDF upload and quiz configuration"""
@@ -52,6 +73,7 @@ def setup_phase():
                     
                     st.session_state.pdf_text = pdf_text
                     st.session_state.pdf_processed = True
+                    st.session_state.pdf_filename = uploaded_file.name
                     st.success("✅ PDF text extracted successfully!")
                     
                     # Show text preview
@@ -74,6 +96,7 @@ def setup_phase():
                     ["Easy", "Medium", "Hard"],
                     help="Easy: Basic concepts and definitions\nMedium: Application and understanding\nHard: Complex analysis and synthesis"
                 )
+                st.session_state.quiz_difficulty = difficulty
             
             with col2:
                 num_questions = st.number_input(
@@ -179,6 +202,19 @@ def show_results():
     score, total = quiz_manager.get_score()
     percentage = (score / total) * 100
     
+    # Save quiz results to database
+    try:
+        session_id = db_manager.save_quiz_session(
+            st.session_state.pdf_filename,
+            st.session_state.get('quiz_difficulty', 'Medium'),
+            quiz_manager.questions,
+            quiz_manager.user_answers
+        )
+        if session_id:
+            st.success("📊 Quiz results saved to your history!")
+    except Exception as e:
+        st.warning("Could not save quiz results to database.")
+    
     st.balloons()
     st.header("🎉 Quiz Completed!")
     
@@ -229,6 +265,70 @@ def show_results():
             st.session_state.quiz_manager = None
             st.session_state.pdf_text = ""
             st.rerun()
+
+def show_quiz_history():
+    """Display quiz history from database"""
+    st.header("📚 Quiz History")
+    
+    history = db_manager.get_quiz_history(limit=20)
+    
+    if not history:
+        st.info("No quiz history found. Take some quizzes to see your progress here!")
+        return
+    
+    for quiz in history:
+        with st.expander(f"📄 {quiz['pdf_filename']} - {quiz['score_percentage']:.1f}% ({quiz['completed_at'].strftime('%Y-%m-%d %H:%M')})"):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Score", f"{quiz['correct_answers']}/{quiz['total_questions']}")
+            with col2:
+                st.metric("Percentage", f"{quiz['score_percentage']:.1f}%")
+            with col3:
+                st.metric("Difficulty", quiz['difficulty'])
+            with col4:
+                st.metric("Date", quiz['completed_at'].strftime('%m/%d/%Y'))
+
+def show_performance_stats():
+    """Display overall performance statistics"""
+    st.header("📊 Performance Statistics")
+    
+    stats = db_manager.get_performance_stats()
+    
+    if not stats or stats.get('total_quizzes', 0) == 0:
+        st.info("No performance data available yet. Take some quizzes to see your stats here!")
+        return
+    
+    # Main stats
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total Quizzes", stats['total_quizzes'])
+    with col2:
+        st.metric("Average Score", f"{stats['average_score']:.1f}%")
+    with col3:
+        st.metric("Best Score", f"{stats['best_score']:.1f}%")
+    
+    # Additional stats
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Questions Answered", stats['total_questions_answered'])
+    with col2:
+        st.metric("Favorite Difficulty", stats['favorite_difficulty'])
+    
+    # Performance level indicator
+    avg_score = stats['average_score']
+    if avg_score >= 90:
+        st.success("🏆 Excellent Performance! You're mastering your study materials!")
+    elif avg_score >= 80:
+        st.success("🥇 Great Job! You have a strong understanding of the content.")
+    elif avg_score >= 70:
+        st.info("👍 Good Progress! Keep practicing to improve further.")
+    elif avg_score >= 60:
+        st.warning("📚 Fair Performance. Consider reviewing the material more thoroughly.")
+    else:
+        st.error("💪 Keep Studying! Practice makes perfect - you'll improve with time!")
 
 if __name__ == "__main__":
     main()
