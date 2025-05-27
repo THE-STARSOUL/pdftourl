@@ -218,6 +218,12 @@ def show_results():
         )
         if session_id:
             st.success("📊 Quiz results saved to your history!")
+            
+        # Mark questions as used to avoid repetition
+        db_manager.mark_questions_as_used(
+            st.session_state.pdf_filename,
+            quiz_manager.questions
+        )
     except Exception as e:
         st.warning("Could not save quiz results to database.")
     
@@ -258,18 +264,21 @@ def show_results():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🔄 Generate New Quiz", type="primary", use_container_width=True):
+        if st.button("➕ More Questions from Same PDF", type="primary", use_container_width=True):
+            # Generate more questions from the same PDF
             st.session_state.quiz_started = False
             st.session_state.quiz_manager = None
+            # Keep the same PDF loaded
             st.rerun()
     
     with col2:
         if st.button("📚 Upload New PDF", use_container_width=True):
-            # Reset everything
+            # Reset everything for new PDF
             st.session_state.quiz_started = False
             st.session_state.pdf_processed = False
             st.session_state.quiz_manager = None
             st.session_state.pdf_text = ""
+            st.session_state.pdf_filename = ""
             st.rerun()
 
 def show_quiz_history():
